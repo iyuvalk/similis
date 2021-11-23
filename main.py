@@ -49,7 +49,7 @@ class SimpleLRUCache:
                     value_frequency = self.value_frequency_dict[value_hash]
                 return value.copy(), value_frequency
             except KeyError:
-                return -1
+                return None, -1
 
     def __put(self, value):
         try:
@@ -94,7 +94,9 @@ class SimpleLRUCache:
 
 
 class SimilisServer:
-    def __init__(self, socket_path, min_cache_size, max_cache_size, sufficient_similarity_rate=90, min_similarity_to_report=95, max_frequency_to_report=2, report_members_of_same_domain=False):
+    def __init__(self, socket_path, min_cache_size, max_cache_size, algorithms_to_use=None, sufficient_similarity_rate=90, min_similarity_to_report=95, max_frequency_to_report=2, report_members_of_same_domain=False):
+        if algorithms_to_use is None:
+            algorithms_to_use = ["textual_starts_with", "textual_prefix", "textual_contains", "textual_strcmp95"]
         self.socket_path = socket_path
         self.cache = SimpleLRUCache(max_cache_size)
         self.min_cache_size = min_cache_size
@@ -108,19 +110,23 @@ class SimilisServer:
         self.time_taken_recent15 = []
         self.time_taken_recent45 = []
         self.time_taken_mgmt_lock = threading.Lock()
-        self.algorithms = {
+        algorithms_library = {
             "textual_starts_with": self.get_similarity_startswith,
             "textual_prefix": self.get_similarity_text_distance_prefix,
             "textual_contains": self.get_similarity_contains,
             "textual_strcmp95": self.get_similarity_strcmp95,
-            # "textual_hamming": self.get_similarity_text_distance_hamming,
-            # "textual_damerau_levenshtein": self.get_similarity_text_distance_damerau_levenshtein,
-            # "textual_levenshtein": self.get_similarity_text_distance_levenshtein,
-            # "textual_jaccard": self.get_similarity_jaccard,
-            # "textual_smith_waterman": self.get_similarity_smith_waterman
-            # "visual_phash_free_mono": self.get_similarity_visual_free_mono,
-            # "visual_phash_free_sans": self.get_similarity_visual_free_sans
+            "textual_hamming": self.get_similarity_text_distance_hamming,
+            "textual_damerau_levenshtein": self.get_similarity_text_distance_damerau_levenshtein,
+            "textual_levenshtein": self.get_similarity_text_distance_levenshtein,
+            "textual_jaccard": self.get_similarity_jaccard,
+            "textual_smith_waterman": self.get_similarity_smith_waterman,
+            "visual_phash_free_mono": self.get_similarity_visual_free_mono,
+            "visual_phash_free_sans": self.get_similarity_visual_free_sans
         }
+        self.algorithms = {}
+        for algorithm in algorithms_to_use:
+            if algorithm in algorithms_library:
+                self.algorithms[algorithm] = algorithms_library[algorithm]
         self.threads_count = 0
         self.threads_lock = threading.Lock()
 
@@ -271,6 +277,9 @@ class SimilisServer:
     def connection_handler(self, conn):
         highest_similarity = -2
         value_frequency = -2
+        avg_time_taken_recent5 = -1
+        avg_time_taken_recent15 = -1
+        avg_time_taken_recent45 = -1
         time_taken = -1
         with self.threads_lock:
             self.threads_count = self.threads_count + 1
@@ -301,16 +310,10 @@ class SimilisServer:
                         self.max_time_taken_ms = time_taken
                     if len(self.time_taken_recent5) == 5:
                         avg_time_taken_recent5 = sum(self.time_taken_recent5) / len(self.time_taken_recent5)
-                    else:
-                        avg_time_taken_recent5 = -1
                     if len(self.time_taken_recent15) == 15:
                         avg_time_taken_recent15 = sum(self.time_taken_recent15) / len(self.time_taken_recent15)
-                    else:
-                        avg_time_taken_recent15 = -1
                     if len(self.time_taken_recent45) == 45:
                         avg_time_taken_recent45 = sum(self.time_taken_recent45) / len(self.time_taken_recent45)
-                    else:
-                        avg_time_taken_recent45 = -1
                 result["time_taken"] = time_taken
                 result["members_of_same_domain"] = False
 
